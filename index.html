@@ -328,7 +328,7 @@ form .btn{width:100%}
   <a class="btn" id="mbBtn" href="#"></a>
 </div>
 
-<footer class="foot">© <span id="yr">2026</span> Alejandro Quiñones · Excedente · Contenido educativo, no constituye asesoría financiera. <span style="opacity:.5">· v9</span></footer>
+<footer class="foot">© <span id="yr">2026</span> Alejandro Quiñones · Excedente · Contenido educativo, no constituye asesoría financiera. <span style="opacity:.5">· v10</span></footer>
 
 <script>
 /* ======================= CONFIGURACIÓN (solo edita aquí) ======================= */
@@ -339,8 +339,6 @@ const CONFIG = {
   DURACION_SEG: 3750,
   // Hora de la clase, todos los días, en hora Colombia (24 h)
   HORA_CLASE: 19,
-  // La repetición cierra al día siguiente a esta hora (Colombia, 24 h)
-  HORA_CIERRE_REPETICION: 21,
   // Si alguien se registra después de esta hora (Colombia), se le asigna la clase de mañana
   HORA_CORTE_HOY: 18,
   // MODO REVISIÓN: true = la clase arranca 30 segundos después de abrir la página (para revisar).
@@ -350,9 +348,9 @@ const CONFIG = {
   SHEET_URL: "https://script.google.com/macros/s/AKfycbwZrRQ5uLa2Mqczthn145BF8_QDnbCoAe8uGZ-GAG_q3fBOyy1qqKgkB_GWYIHg3apm/exec",
   // Página de gracias. Mientras esté vacía, después del registro se muestra la sala de la clase.
   GRACIAS_URL: "",
-  // Mensaje cuando ya cerró la repetición
-  CIERRE_TITULO: "La repetición ya no está disponible",
-  CIERRE_TEXTO: "Gracias por tu interés. Revisa tu WhatsApp y tu correo: ahí te envío la información para seguir avanzando conmigo."
+  // Mensaje al terminar la clase (el título va precedido del nombre de la persona)
+  CIERRE_TITULO: "te doy la bienvenida a la Ruta Excedente 8S",
+  CIERRE_TEXTO: "Gracias por acompañarme en esta clase. Mañana te espero en el equipo: revisa tu WhatsApp, ahí te envío todo."
 };
 /* =============================================================================== */
 
@@ -405,7 +403,7 @@ const urlTel = (qs.get("tel") || qs.get("telefono") || "").replace(/\D/g, "");
 const forceRoom = qs.get("r") === "1" || qs.get("acceso") === "1";
 
 // si su clase anterior ya cerró y llega con un enlace nuevo, se registra de nuevo para la nueva fecha
-if (reg && reg.fecha && urlDate && Date.now() >= atCol(addDays(reg.fecha, 1), CONFIG.HORA_CIERRE_REPETICION)) reg = null;
+if (reg && reg.fecha && urlDate && Date.now() >= atCol(reg.fecha, CONFIG.HORA_CLASE) + DUR * 1000) reg = null;
 // enlace personal (correo / WhatsApp): ?r=1&nombre=Ana&fecha=AAAA-MM-DD → entra directo en cualquier dispositivo
 if (forceRoom && qs.get("nombre") && !(CONFIG.MODO_REVISION && !qs.get("prueba"))) {
   const n = qs.get("nombre").trim().split(/\s+/)[0].slice(0, 30);
@@ -415,15 +413,12 @@ if (forceRoom && qs.get("nombre") && !(CONFIG.MODO_REVISION && !qs.get("prueba")
 let FECHA = (reg && reg.fecha && !qs.get("fecha")) ? reg.fecha : (urlDate || (reg && reg.fecha) || autoDate());
 
 /* ---------- modo prueba ---------- */
-// ?prueba=1 → la clase empieza 15 s después de abrir · ?prueba=repeticion → ya terminó · ?prueba=cierre → cerrada
+// ?prueba=1 → la clase empieza 15 s después de abrir · ?prueba=vivo → va en el minuto 10 · ?prueba=cierre → ya terminó
 let START = atCol(FECHA, CONFIG.HORA_CLASE);
-let CLOSE = atCol(addDays(FECHA, 1), CONFIG.HORA_CIERRE_REPETICION);
 const P = qs.get("prueba");
 if (P === "1" || (CONFIG.MODO_REVISION && !P)) { START = Date.now() + (P ? 15000 : 30000); }
 if (P === "vivo") { START = Date.now() - 10 * 60e3; }
-if (P === "repeticion") { START = Date.now() - (DUR + 60) * 1000; }
-if (P === "cierre") { START = Date.now() - 2 * 86400e3; CLOSE = Date.now() - 1000; }
-if ((P || CONFIG.MODO_REVISION) && P !== "cierre") CLOSE = Math.max(CLOSE, START + DUR * 1000 + 86400e3);
+if (P === "cierre") { START = Date.now() - 2 * 86400e3; }
 
 /* ================= REGISTRO ================= */
 const COUNTRIES = [["Venezuela","+58"],["Colombia","+57"],["Perú","+51"],["México","+52"],["Argentina","+54"],["Chile","+56"],["Ecuador","+593"],["Panamá","+507"],["Rep. Dominicana","+1"],["Estados Unidos","+1"],["España","+34"],["Costa Rica","+506"],["Uruguay","+598"],["Paraguay","+595"],["Bolivia","+591"],["Guatemala","+502"],["Honduras","+504"],["El Salvador","+503"],["Nicaragua","+505"],["Puerto Rico","+1"],["Canadá","+1"],["Brasil","+55"],["Italia","+39"],["Portugal","+351"],["Alemania","+49"],["Reino Unido","+44"],["Francia","+33"]];
@@ -510,7 +505,7 @@ function showRoom(){
 function setStatus(s){
   const el = $("status");
   el.classList.toggle("on", s === "live");
-  $("statusTxt").textContent = { reg: "Clase gratuita", wait: "Próximamente", live: "Transmitiendo", replay: "Repetición", closed: "Finalizada" }[s] || "";
+  $("statusTxt").textContent = { reg: "Clase gratuita", wait: "Próximamente", live: "Transmitiendo", closed: "Finalizada" }[s] || "";
 }
 function setBar(lbl, val, btnTxt, href){
   $("mbar").hidden = false;
@@ -527,7 +522,6 @@ function computeState(){
   const now = Date.now();
   if (now < START) return "wait";
   if (now < START + DUR * 1000) return "live";
-  if (now < CLOSE) return "replay";
   return "closed";
 }
 
@@ -541,7 +535,7 @@ function tick(){
   }
   if (!roomStarted) return;
   const s = computeState();
-  if (s !== state) { teardown(); state = s; setStatus(s); ({ wait: renderWait, live: renderLive, replay: renderReplay, closed: renderClosed })[s](); }
+  if (s !== state) { teardown(); state = s; setStatus(s); ({ wait: renderWait, live: renderLive, closed: renderClosed })[s](); }
   if (s === "wait") {
     const left = Math.max(0, Math.floor((START - Date.now()) / 1000));
     $("cd-d").textContent = pad(Math.floor(left / 86400));
@@ -551,9 +545,6 @@ function tick(){
     $("cd-d").parentNode.hidden = left < 86400;
     $("waitLbl").textContent = left < 120 ? "Estamos por comenzar" : "La clase comienza en";
     setBar("La clase comienza en", fmtLeft(left), "", "");
-  } else if (s === "replay") {
-    const left = Math.max(0, Math.floor((CLOSE - Date.now()) / 1000));
-    setBar("La repetición cierra en", fmtLeft(left), "Ver", "#screen");
   }
 }
 
@@ -694,31 +685,12 @@ async function resync(){
 }
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { resync(); tick(); } });
 
-/* ---------- repetición ---------- */
-function renderReplay(){
-  screen.classList.remove("tall");
-  makeIframe("controls=1&autoplay=0&keyboard=0");
-  const enter = document.createElement("button");
-  enter.type = "button"; enter.className = "layer enter"; enter.setAttribute("aria-label", "Ver la repetición");
-  enter.style.backgroundImage = `url(${THUMB})`;
-  const tagR = document.createElement("div"); tagR.className = "badge"; tagR.innerHTML = "<i style='animation:none;background:var(--blue)'></i>Repetición"; enter.appendChild(tagR);
-  screen.appendChild(enter);
-  const posKey = KEY + "_pos_" + FECHA;
-  let saved = 0; try { saved = +localStorage.getItem(posKey) || 0; } catch(e){}
-  enter.addEventListener("click", async () => {
-    enter.remove();
-    if (!player) return;
-    try { if (saved > 30 && saved < DUR - 60) await player.setCurrentTime(saved); await player.play(); } catch(e){}
-  });
-  if (player) saveTimer = setInterval(() => { player.getCurrentTime().then(t => { try { localStorage.setItem(posKey, Math.floor(t)); } catch(e){} }).catch(() => {}); }, 10000);
-  const cierre = colDate(CLOSE) === colDate(Date.now()) ? "hoy" : "mañana";
-  $("below1").innerHTML = `Repetición disponible hasta <b>${cierre} a las ${hm(CONFIG.HORA_CIERRE_REPETICION)}</b> (Colombia) · ${hm(CONFIG.HORA_CIERRE_REPETICION + 1)} (Venezuela)`;
-}
-
 function renderClosed(){
   screen.classList.add("tall");
-  screen.innerHTML = `<div class="layer msg"><div><h2>${CONFIG.CIERRE_TITULO}</h2><p>${CONFIG.CIERRE_TEXTO}</p></div></div>`;
-  $("mbar").hidden = true; $("chips").hidden = true; $("below1").textContent = "";
+  const n = reg && reg.nombre ? reg.nombre.split(" ")[0].replace(/[<>&"]/g, "") : "";
+  const t = n ? `${n}, ${CONFIG.CIERRE_TITULO}` : CONFIG.CIERRE_TITULO.charAt(0).toUpperCase() + CONFIG.CIERRE_TITULO.slice(1);
+  screen.innerHTML = `<div class="layer msg"><div><span class="tag" style="background:var(--orange)">Clase finalizada</span><h2 style="margin-top:14px">${t}</h2><p>${CONFIG.CIERRE_TEXTO}</p></div></div>`;
+  $("mbar").hidden = true; $("chips").hidden = true; $("below1").textContent = ""; $("hello").hidden = true;
 }
 
 /* ================= ARRANQUE ================= */
