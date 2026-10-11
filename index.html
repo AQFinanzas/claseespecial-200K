@@ -404,6 +404,10 @@ function dateFromUrl(){
     // después de la hora de corte (6 p. m. Colombia) ya no se asigna la clase de hoy: pasa a mañana
     return colHour(Date.now()) < CONFIG.HORA_CORTE_HOY ? today : addDays(today, 1);
   }
+  if (dia === "vivo") {
+    // enlaces de los recordatorios del día de la clase: la clase de hoy hasta que termine (sin corte de las 6 p. m.)
+    return Date.now() < atCol(today, CONFIG.HORA_CLASE) + DUR * 1000 ? today : addDays(today, 1);
+  }
   if (dia === "manana") return addDays(today, 1);
   return null;
 }
