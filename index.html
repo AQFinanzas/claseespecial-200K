@@ -661,14 +661,34 @@ function renderLive(){
     const p = screen.querySelector(".pill"); if (p && !m) p.remove();
   }
   bVol.addEventListener("click", () => setMute(!muted));
-  shield.addEventListener("click", () => { if (muted) setMute(false); });   // tocar el video activa el sonido
+  // tocar el video: activa el sonido y, si está detenido, lo pone a andar en el minuto de la transmisión
+  shield.addEventListener("click", async () => {
+    if (muted) setMute(false);
+    try { if (await player.getPaused()) { const r = screen.querySelector(".resume"); if (r) r.remove();
+      await player.setMuted(false); muted = false; bVol.innerHTML = ICON.on; await player.play(); } } catch(e){}
+    resync();
+  });
   bFs.addEventListener("click", () => {
     const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
     if (fsEl) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
     else canFs.call(screen);
   });
 
+  // botón grande "Entrar a la clase" (un toque del usuario siempre permite reproducir)
+  function showEnter(){
+    if (screen.querySelector(".resume")) return;
+    const r = document.createElement("button"); r.type = "button"; r.className = "layer resume";
+    r.innerHTML = `<span>${ICON.play}Entrar a la clase</span>`;
+    r.addEventListener("click", async () => { r.remove(); try { await player.setMuted(false); muted = false; bVol.innerHTML = ICON.on; await player.play(); } catch(e){} resync(); });
+    screen.appendChild(r);
+  }
   async function start(){
+    // seguro: si a los 4 segundos el video sigue detenido (el navegador no respondió), muestra el botón para entrar
+    setTimeout(async () => {
+      if (state !== "live" || !player) return;
+      let detenido = true; try { detenido = await player.getPaused(); } catch(e){}
+      if (detenido) showEnter();
+    }, 4000);
     try { await player.setMuted(false); await player.setVolume(1); await player.play(); }
     catch(e){
       // el navegador bloqueó el sonido: arranca sin sonido y pide un toque
@@ -677,10 +697,7 @@ function renderLive(){
         pill.addEventListener("click", () => setMute(false)); screen.appendChild(pill);
       } catch(e2){
         // el celular bloqueó todo (p. ej. modo ahorro de batería): un toque para entrar
-        const r = document.createElement("button"); r.type = "button"; r.className = "layer resume";
-        r.innerHTML = `<span>${ICON.play}Entrar a la clase</span>`;
-        r.addEventListener("click", async () => { r.remove(); try { await player.setMuted(false); muted = false; bVol.innerHTML = ICON.on; await player.play(); } catch(e){} resync(); });
-        screen.appendChild(r);
+        showEnter();
       }
     }
     resync();
