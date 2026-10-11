@@ -685,13 +685,17 @@ function renderLive(){
     screen.appendChild(r);
   }
   async function start(){
-    // seguro: si a los 4 segundos el video sigue detenido (el navegador no respondió), muestra el botón para entrar
+    // seguro: si a los 10 segundos el video sigue detenido (el navegador no respondió), muestra el botón para entrar
     setTimeout(async () => {
       if (state !== "live" || !player) return;
       let detenido = true; try { detenido = await vt(player.getPaused(), 2500, true); } catch(e){}
       if (detenido) showEnter();
-    }, 4000);
-    try { await vt(player.setMuted(false)); await vt(player.setVolume(1)); await vt(player.play(), 3000); }
+    }, 10000);
+    try {
+      await vt(player.setMuted(false)); await vt(player.setVolume(1)); await vt(player.play(), 3000);
+      // si el navegador no dejó arrancar con sonido (no responde), se intenta sin sonido
+      if (await vt(player.getPaused(), 2500, true)) throw new Error("bloqueado");
+    }
     catch(e){
       // el navegador bloqueó el sonido: arranca sin sonido y pide un toque
       try { await vt(player.setMuted(true)); await vt(player.play(), 3000); muted = true; bVol.innerHTML = ICON.off;
