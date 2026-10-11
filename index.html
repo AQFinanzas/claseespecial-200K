@@ -338,7 +338,7 @@ form .btn{width:100%}
   <a class="btn" id="mbBtn" href="#"></a>
 </div>
 
-<footer class="foot">© <span id="yr">2026</span> Alejandro Quiñones · Excedente · Contenido educativo, no constituye asesoría financiera. <span style="opacity:.5">· v12</span></footer>
+<footer class="foot">© <span id="yr">2026</span> Alejandro Quiñones · Excedente · Contenido educativo, no constituye asesoría financiera. <span style="opacity:.5">· v13</span></footer>
 
 <script>
 /* ======================= CONFIGURACIÓN (solo edita aquí) ======================= */
@@ -399,8 +399,8 @@ function dateFromUrl(){
   if (validDate(f)) return f;
   const today = colDate(Date.now());
   if (dia === "hoy") {
-    // si la clase de hoy ya terminó, pasa a mañana
-    return Date.now() < atCol(today, CONFIG.HORA_CLASE) + DUR * 1000 ? today : addDays(today, 1);
+    // después de la hora de corte (6 p. m. Colombia) ya no se asigna la clase de hoy: pasa a mañana
+    return colHour(Date.now()) < CONFIG.HORA_CORTE_HOY ? today : addDays(today, 1);
   }
   if (dia === "manana") return addDays(today, 1);
   return null;
@@ -417,7 +417,8 @@ if (reg && reg.fecha && urlDate && Date.now() >= atCol(reg.fecha, CONFIG.HORA_CL
 // enlace personal (correo / WhatsApp): ?r=1&nombre=Ana&fecha=AAAA-MM-DD → entra directo en cualquier dispositivo
 if (forceRoom && qs.get("nombre") && !(CONFIG.MODO_REVISION && !qs.get("prueba"))) {
   const n = qs.get("nombre").trim().split(/\s+/)[0].slice(0, 30);
-  reg = { nombre: n.charAt(0).toUpperCase() + n.slice(1).toLowerCase(), fecha: urlDate || (reg && reg.fecha) || autoDate(), t: Date.now() };
+  const w = (qs.get("w") || "").replace(/\D/g, "") || (reg && reg.w) || "";
+  reg = { nombre: n.charAt(0).toUpperCase() + n.slice(1).toLowerCase(), correo: (reg && reg.correo) || "", w, fecha: urlDate || (reg && reg.fecha) || autoDate(), t: Date.now() };
   setReg(reg);
 }
 let FECHA = (reg && reg.fecha && !qs.get("fecha")) ? reg.fecha : (urlDate || (reg && reg.fecha) || autoDate());
@@ -462,7 +463,7 @@ $("form").addEventListener("submit", async ev => {
   err.textContent = "";
   const btn = $("send"); btn.disabled = true; btn.textContent = "Reservando tu lugar…";
   // seguro: pase lo que pase con el envío, a los 3 segundos entra a la clase
-  const safety = setTimeout(() => { if (!$("curtain").hidden) { reg = reg || { nombre, correo, fecha: FECHA, t: Date.now() }; setReg(reg); hideReg(); showRoom(); } }, 3000);
+  const safety = setTimeout(() => { if (!$("curtain").hidden) { reg = reg || { nombre, correo, w: whatsapp, fecha: FECHA, t: Date.now() }; setReg(reg); hideReg(); showRoom(); } }, 3000);
   try {
   const data = {
     nombre: nombre + " " + apellido, nombre_solo: nombre, apellido, correo,
@@ -482,7 +483,7 @@ $("form").addEventListener("submit", async ev => {
   }
   } catch(e){}
   clearTimeout(safety);
-  reg = { nombre, correo, fecha: FECHA, t: Date.now() };
+  reg = { nombre, correo, w: whatsapp, fecha: FECHA, t: Date.now() };
   setReg(reg);
   if (CONFIG.GRACIAS_URL) {
     const u = new URL(CONFIG.GRACIAS_URL, location.href);
@@ -490,7 +491,26 @@ $("form").addEventListener("submit", async ev => {
     location.href = u.toString(); return;
   }
   hideReg(); showRoom(); window.scrollTo({ top: 0 });
+  if (state === "live") marcarAsistencia();
 });
+
+/* ================= ASISTENCIA ================= */
+// La primera vez que la clase se reproduce en vivo, avisa al Sheet (marca "Asistió" y avisa a Funnelchat).
+function marcarAsistencia(){
+  if (!CONFIG.SHEET_URL || !reg) return;
+  const k = KEY + "_asis_" + FECHA;
+  try { if (localStorage.getItem(k)) return; localStorage.setItem(k, "1"); } catch(e){}
+  // si se acaba de registrar, espera unos segundos para que su fila ya exista en el Sheet
+  const espera = Math.max(0, 8000 - (Date.now() - (reg.t || 0)));
+  setTimeout(() => enviarAsistencia(), espera);
+}
+function enviarAsistencia(){
+  const data = new URLSearchParams({ accion: "asistio", whatsapp: reg.w || urlTel || "", correo: reg.correo || "",
+    nombre: reg.nombre || "", fecha_clase: FECHA, minuto: String(Math.max(0, Math.floor(liveSec() / 60))) });
+  let sent = false;
+  try { sent = navigator.sendBeacon && navigator.sendBeacon(CONFIG.SHEET_URL, data); } catch(e){}
+  if (!sent) fetch(CONFIG.SHEET_URL, { method: "POST", mode: "no-cors", body: data, keepalive: true }).catch(() => {});
+}
 
 /* ================= SALA ================= */
 function showReg(){
@@ -545,7 +565,11 @@ function tick(){
   }
   if (!roomStarted) return;
   const s = computeState();
-  if (s !== state) { teardown(); state = s; setStatus(s); ({ wait: renderWait, live: renderLive, closed: renderClosed })[s](); }
+  if (s !== state) {
+    teardown(); state = s; setStatus(s); ({ wait: renderWait, live: renderLive, closed: renderClosed })[s]();
+    // "Lo que vas a descubrir" solo antes de la clase; en vivo y al terminar queda solo el perfil
+    const learn = document.querySelector(".learn"); if (learn) learn.style.display = s === "wait" ? "" : "none";
+  }
   if (s === "wait") {
     const left = Math.max(0, Math.floor((START - Date.now()) / 1000));
     $("cd-d").textContent = pad(Math.floor(left / 86400));
@@ -608,6 +632,7 @@ function renderLive(){
   if (!window.Vimeo) {
     // respaldo si no carga la librería de Vimeo: video con controles, arrancando en el minuto actual
     makeIframe("controls=1&autoplay=1&muted=1#t=" + Math.floor(liveSec()) + "s");
+    marcarAsistencia();
     setBar("Estamos", '<span class="dot"></span>Transmitiendo', "Ver clase", "#screen");
     return;
   }
@@ -678,7 +703,7 @@ function renderLive(){
     r.addEventListener("click", async () => { r.remove(); try { await player.play(); } catch(e){} resync(); });
     screen.appendChild(r);
   });
-  player.on("play", resync);
+  player.on("play", () => { marcarAsistencia(); resync(); });
   player.on("seeked", resync);
   player.on("ended", () => tick());
   syncTimer = setInterval(resync, 8000);
